@@ -113,6 +113,7 @@ static char AUTHMSG2[]= "\"\r\n"
 "Login and Password required\r\n"
 "<hr>\r\nSimpleProxy\r\n"
 "</BODY></HTML>\r\n";
+static char *APC_TERMINATOR = "";
 
 struct lst_record
 {
