@@ -62,14 +62,14 @@
 #endif
 #include <sys/stat.h>
 
-#if HAVE_SYSLOG_H
-# include <syslog.h>
-#endif
+// eclipse pak nezná LOG_ERR atd #if HAVE_SYSLOG_H
+# include <sys/syslog.h>
+//#endif
 
 #include <netdb.h>
-#if HAVE_FCNTL_H
+// taky musi pryc #if HAVE_FCNTL_H
 #include <fcntl.h>
-#endif
+// #endif
 #if HAVE_TERMIO_H
 # include <termio.h>
 #endif
@@ -91,7 +91,8 @@
 # define SAME 0
 #endif
 
-#define MBUFSIZ 8192
+//#define MBUFSIZ 8192
+#define MBUFSIZ 81920
 
 #define SELECT_TIMOEOUT_SEC  5
 #define SELECT_TIMOEOUT_MSEC 0
@@ -113,7 +114,9 @@ static char AUTHMSG2[]= "\"\r\n"
 "Login and Password required\r\n"
 "<hr>\r\nSimpleProxy\r\n"
 "</BODY></HTML>\r\n";
-static char *APC_TERMINATOR = "\r\n";
+//static char *APC_TERMINATOR = "\r\n";
+#define APC_TERMINATOR "\r\n"
+#define APC_TERMINATOR_LEN 2
 
 struct lst_record
 {
@@ -723,14 +726,14 @@ static int pass_out( int in, int out)
         }
         if (isAPC) // strip out terminator
         {
-            if (nread >= 2 && 
-                buff[nread - 2] == APC_TERMINATOR[0] && 
-                buff[nread - 1] == APC_TERMINATOR[1])
-            {
-                nread -= 2;  // Reduce buffer length by length of terminator
-                buff[nread + 1] == '\0'; 
-                buff[nread + 2] == '\0';
-            }
+        	if (nread + APC_TERMINATOR_LEN >= MBUFSIZ) {
+        	    fprintf(stderr, "Error: Buffer size %d is too small for message length %d\n",
+        	            MBUFSIZ, (int)(nread + APC_TERMINATOR_LEN));
+        	    _exit(EXIT_FAILURE);  // Use _exit() instead of exit() in child processes
+        	}
+        	// If we get here, it's safe to add the terminator
+        	memcpy(buff + nread, APC_TERMINATOR, APC_TERMINATOR_LEN);
+        	nread += APC_TERMINATOR_LEN;
         }
 
         if(writen(out, buff, nread) != nread)
@@ -833,13 +836,11 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
             }
             if (isAPC) // strip out terminator
             {
-                if (nread >= 2 && 
-                    buff[nread - 2] == APC_TERMINATOR[0] && 
-                    buff[nread - 1] == APC_TERMINATOR[1])
-                {
-                    nread -= 2;  // Reduce buffer length by length of terminator
-                    buff[nread + 1] == '\0'; 
-                    buff[nread + 2] == '\0';
+            	if ( nread > APC_TERMINATOR_LEN &&
+                		( memcmp(buff + nread - APC_TERMINATOR_LEN, APC_TERMINATOR, APC_TERMINATOR_LEN) == 0 )
+                ) {
+                    nread -= APC_TERMINATOR_LEN;
+                    len -= APC_TERMINATOR_LEN;
                 }
             }
 

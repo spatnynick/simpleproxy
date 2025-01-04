@@ -6,6 +6,7 @@ simpleproxy \- Simple tcp socket proxy
 .ta 6n
 \fBsimpleproxy\fP 
 [-7]
+[-8]
 [-v]
 [-V]
 [-d]
@@ -35,6 +36,9 @@ Makes \fIsimpleproxy\fP to write activity information to \fIsyslog\fP or \fIstde
 .TP 8
 .B \-7
 Makes \fIsimpleproxy\fP to strip 8th bit.
+.TP 8
+.B \-8
+Removes terminator from the end of the client messages before they are forwarded to the remote server and appends this terminator to the end of the messages from remote server before they are forwarded back to the client. Currently terminator is CRLF (x0D x0A) - it's hardcoded in the sourcecode.
 .TP 8
 .B \-i
 Use this flag when starting \fIsimpleproxy\fP from INETD.
