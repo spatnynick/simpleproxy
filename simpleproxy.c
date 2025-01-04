@@ -113,7 +113,7 @@ static char AUTHMSG2[]= "\"\r\n"
 "Login and Password required\r\n"
 "<hr>\r\nSimpleProxy\r\n"
 "</BODY></HTML>\r\n";
-static char *APC_TERMINATOR = "";
+static char *APC_TERMINATOR = "\r\n";
 
 struct lst_record
 {
@@ -155,6 +155,7 @@ static int   isStripping        = 0;
 static int   isStartedFromInetd = 0;
 static int   isUsingHTTPSAuth   = 0;
 static int   isHtmlProbe        = 0;
+static int   isAPC              = 0;
 static long  Delay              = 0;
 
 static char *HTTPSProxyHost     = nil;
@@ -192,7 +193,7 @@ int main(int ac, char **av)
     char   hbuf[NI_MAXHOST];
 
     /* Check for the arguments, and overwrite values from cfg file */
-    while((c = getopt(ac, av, "iVv7dhuL:R:H:f:p:P:D:S:s:a:A:t:")) != -1)
+    while((c = getopt(ac, av, "iVv78dhuL:R:H:f:p:P:D:S:s:a:A:t:")) != -1)
         switch (c)
         {
         case 'v':
@@ -291,6 +292,9 @@ int main(int ac, char **av)
             break;
         case '7':
             isStripping = 1;
+            break;
+        case '8':
+            isAPC = 1;
             break;
         case 'S':
             parse_host_port(optarg, &HTTPSProxyHost, &HTTPSProxyPort);
@@ -717,6 +721,17 @@ static int pass_out( int in, int out)
             for (bufp = buff+nread-1; bufp >= buff; bufp--)
                 *bufp = *bufp&0177;
         }
+        if (isAPC) // strip out terminator
+        {
+            if (nread >= 2 && 
+                buff[nread - 2] == APC_TERMINATOR[0] && 
+                buff[nread - 1] == APC_TERMINATOR[1])
+            {
+                nread -= 2;  // Reduce buffer length by length of terminator
+                buff[nread + 1] == '\0'; 
+                buff[nread + 2] == '\0';
+            }
+        }
 
         if(writen(out, buff, nread) != nread)
         {
@@ -757,7 +772,8 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
     if ((size - len) == 0) {
         if (size==0) size=MBUFSIZ;
         else size *= 2;
-        buff = realloc(buff,size+1);
+        if (isAPC) buff = realloc(buff,size+1+sizeof(APC_TERMINATOR));  // + space for APC_TERMINATOR
+        else buff = realloc(buff,size+1);
         if (!buff)
             return -1;
     }
@@ -815,11 +831,24 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
                 for (bufp = buff+nread-1; bufp >= buff; bufp--)
                     *bufp = *bufp&0177;
             }
+            if (isAPC) // strip out terminator
+            {
+                if (nread >= 2 && 
+                    buff[nread - 2] == APC_TERMINATOR[0] && 
+                    buff[nread - 1] == APC_TERMINATOR[1])
+                {
+                    nread -= 2;  // Reduce buffer length by length of terminator
+                    buff[nread + 1] == '\0'; 
+                    buff[nread + 2] == '\0';
+                }
+            }
+
             if(writen(out, buff, len) != len)
             {
                 logmsg(LOG_ERR,"write error");
                 return -1;
             }
+
             len -= nread;
             *buff=0;
         }
