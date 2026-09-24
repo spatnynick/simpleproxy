@@ -62,14 +62,13 @@
 #endif
 #include <sys/stat.h>
 
-// eclipse pak nezná LOG_ERR atd #if HAVE_SYSLOG_H
-# include <sys/syslog.h>
-//#endif
+/* Included unconditionally: LOG_* constants are used everywhere regardless of
+ * HAVE_SYSLOG_H, and IDE indexers (e.g. Eclipse) don't see configure's -D flags. */
+#include <syslog.h>
 
 #include <netdb.h>
-// taky musi pryc #if HAVE_FCNTL_H
+/* Included unconditionally: O_RDONLY etc. are used regardless of HAVE_FCNTL_H. */
 #include <fcntl.h>
-// #endif
 #if HAVE_TERMIO_H
 # include <termio.h>
 #endif
@@ -91,14 +90,15 @@
 # define SAME 0
 #endif
 
-//#define MBUFSIZ 8192
+/* Upstream uses 8192. Raised so that larger APC messages from the remote side
+ * are more likely to arrive in one read() and get a single terminator (see -8). */
 #define MBUFSIZ 81920
 
 #define SELECT_TIMOEOUT_SEC  5
 #define SELECT_TIMOEOUT_MSEC 0
 
-static char *SIMPLEPROXY_VERSION = "simpleproxy v3.6 by lord@crocodile.org,vlad@noir.crocodile.org,verylong@noir.crocodile.org,renzo@cs.unibo.it";
-static char *SIMPLEPROXY_USAGE   = "simpleproxy -L <[host:]port> -R <host:port> [-d] [-v] [-V] [-7] [-i] [-u] [-p PID file] [-P <POP3 accounts list file>] [-f cfgfile] [-t tracefile] [-D delay in sec.] [-S <HTTPS proxy host:port> [-a <HTTPS Auth user>:<HTTPS Auth password>] ] [-A  <HTTP Auth user>:<HTTP Auth password>]";
+static char *SIMPLEPROXY_VERSION = "simpleproxy v3.6-apc by lord@crocodile.org,vlad@noir.crocodile.org,verylong@noir.crocodile.org,renzo@cs.unibo.it";
+static char *SIMPLEPROXY_USAGE   = "simpleproxy -L <[host:]port> -R <host:port> [-d] [-v] [-V] [-7] [-8] [-i] [-u] [-p PID file] [-P <POP3 accounts list file>] [-f cfgfile] [-t tracefile] [-D delay in sec.] [-S <HTTPS proxy host:port> [-a <HTTPS Auth user>:<HTTPS Auth password>] ] [-A  <HTTP Auth user>:<HTTP Auth password>]";
 static char *PROXY_HEADER_FMT = "\r\nProxy-Authorization: Basic %s";
 static char *PROXY_HEADER = "\r\nProxy-Authorization: Basic ";
 static char AUTHMSG[]=
@@ -114,7 +114,7 @@ static char AUTHMSG2[]= "\"\r\n"
 "Login and Password required\r\n"
 "<hr>\r\nSimpleProxy\r\n"
 "</BODY></HTML>\r\n";
-//static char *APC_TERMINATOR = "\r\n";
+/* Message terminator used by -8 (SAP ABAP Push Channel framing) */
 #define APC_TERMINATOR "\r\n"
 #define APC_TERMINATOR_LEN 2
 
@@ -237,6 +237,8 @@ int main(int ac, char **av)
                         isStripping = str2bool(cfgfind("Strip8bit", cfg, 0));
                     if (!isHtmlProbe)
                         isHtmlProbe = str2bool(cfgfind("HtmlProbe", cfg, 0));
+                    if (!isAPC)
+                        isAPC = str2bool(cfgfind("APCTerminator", cfg, 0));
 
                     tmp = cfgfind("LocalPort", cfg, 0);
                     if (tmp && lportn == -1)
@@ -343,6 +345,9 @@ int main(int ac, char **av)
     if(http_auth)
         HTTPAuthHash = base64_encode(http_auth);
 
+    if(isAPC && (isHtmlProbe || HTTPAuthHash) && !isStartedFromInetd)
+        fprintf(stderr, "Warning! APC terminator handling (-8) is ignored when -u or -A is used\n");
+
     if (isStartedFromInetd && lportn > 0)
         errflg++;
 
@@ -443,7 +448,7 @@ int main(int ac, char **av)
                 break;
 
             case 0: /* Child */
-                if (getnameinfo((const struct sockaddr *) &cli_addr, len,
+                if (getnameinfo((const struct sockaddr *) &cli_addr, clien,
                                 hbuf, sizeof(hbuf), NULL, 0, 0) == 0)
                     client_name = strdup(hbuf);
                 else
@@ -714,7 +719,8 @@ static int pass_out( int in, int out)
     int nread;
     char buff[MBUFSIZ];
 
-    if ((nread = readln(in, buff,MBUFSIZ)) <= 0)
+    /* With -8 leave room in buff for the terminator appended below */
+    if ((nread = readln(in, buff, isAPC? MBUFSIZ - APC_TERMINATOR_LEN: MBUFSIZ)) <= 0)
         return -1;
     else
     {
@@ -724,16 +730,11 @@ static int pass_out( int in, int out)
             for (bufp = buff+nread-1; bufp >= buff; bufp--)
                 *bufp = *bufp&0177;
         }
-        if (isAPC) // strip out terminator
+        if (isAPC)
         {
-        	if (nread + APC_TERMINATOR_LEN >= MBUFSIZ) {
-        	    fprintf(stderr, "Error: Buffer size %d is too small for message length %d\n",
-        	            MBUFSIZ, (int)(nread + APC_TERMINATOR_LEN));
-        	    _exit(EXIT_FAILURE);  // Use _exit() instead of exit() in child processes
-        	}
-        	// If we get here, it's safe to add the terminator
-        	memcpy(buff + nread, APC_TERMINATOR, APC_TERMINATOR_LEN);
-        	nread += APC_TERMINATOR_LEN;
+            /* remote -> client: append terminator to each chunk read */
+            memcpy(buff + nread, APC_TERMINATOR, APC_TERMINATOR_LEN);
+            nread += APC_TERMINATOR_LEN;
         }
 
         if(writen(out, buff, nread) != nread)
@@ -776,8 +777,7 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
     if ((size - len) == 0) {
         if (size==0) size=MBUFSIZ;
         else size *= 2;
-        if (isAPC) buff = realloc(buff,size+1+sizeof(APC_TERMINATOR));  // + space for APC_TERMINATOR
-        else buff = realloc(buff,size+1);
+        buff = realloc(buff,size+1);
         if (!buff)
             return -1;
     }
@@ -835,11 +835,12 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
                 for (bufp = buff+nread-1; bufp >= buff; bufp--)
                     *bufp = *bufp&0177;
             }
-            if (isAPC) // strip out terminator
+            if (isAPC)
             {
-            	if ( nread > APC_TERMINATOR_LEN &&
-                		( memcmp(buff + nread - APC_TERMINATOR_LEN, APC_TERMINATOR, APC_TERMINATOR_LEN) == 0 )
-                ) {
+                /* client -> remote: strip terminator from the end of the chunk read */
+                if (nread > APC_TERMINATOR_LEN &&
+                    memcmp(buff + nread - APC_TERMINATOR_LEN, APC_TERMINATOR, APC_TERMINATOR_LEN) == 0)
+                {
                     nread -= APC_TERMINATOR_LEN;
                     len -= APC_TERMINATOR_LEN;
                 }
@@ -850,7 +851,6 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
                 logmsg(LOG_ERR,"write error");
                 return -1;
             }
-
             len -= nread;
             *buff=0;
         }

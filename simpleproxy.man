@@ -38,7 +38,16 @@ Makes \fIsimpleproxy\fP to write activity information to \fIsyslog\fP or \fIstde
 Makes \fIsimpleproxy\fP to strip 8th bit.
 .TP 8
 .B \-8
-Removes terminator from the end of the client messages before they are forwarded to the remote server and appends this terminator to the end of the messages from remote server before they are forwarded back to the client. Currently terminator is CRLF (x0D x0A) - it's hardcoded in the sourcecode.
+SAP ABAP Push Channel (APC) terminator mode (this fork only, not in upstream).
+The terminator (CRLF, 0x0D 0x0A, fixed at compile time) is removed from the end
+of data received from the client before it is forwarded to the remote host, and
+appended to data received from the remote host before it is sent back to the
+client. This lets a peer that uses APC TCP terminator framing (e.g. an ABAP
+program connecting to \fIsimpleproxy\fP) talk to a server that does not use a
+message terminator. The terminator is handled per \fBread()\fP, not per
+message: only a terminator at the very end of a read chunk is stripped, and a
+terminator is appended after every chunk read from the remote host. Ignored when
+\fB\-u\fP or \fB\-A\fP is used. Config file key: \fIAPCTerminator\fP.
 .TP 8
 .B \-i
 Use this flag when starting \fIsimpleproxy\fP from INETD.

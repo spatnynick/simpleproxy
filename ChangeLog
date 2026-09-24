@@ -1,3 +1,20 @@
+2026-09-24  spatnynick  <spatnynick@gmail.com>
+
+	* fork version 3.6-apc (based on upstream 3.6)
+	* merged upstream v3.6 (auth_check OOB memmove security fix)
+	* simpleproxy.c (pass_out): -8 no longer kills the connection when a
+	read fills the buffer; buffer space is reserved for the terminator.
+	* simpleproxy.c (main): -8 can be set from cfg file (APCTerminator),
+	is listed in usage, warns when combined with -u/-A.
+	* simpleproxy.c (main): fixed uninitialized length passed to
+	getnameinfo() for the client address (also present upstream).
+	* README.md: documented fork differences.
+
+2025-01-04  spatnynick  <spatnynick@gmail.com>
+
+	* simpleproxy.c: new -8 option for SAP ABAP Push Channel (APC)
+	CRLF terminator handling. MBUFSIZ raised from 8192 to 81920.
+
 2026-03-05  Vadim Zaliva  <lord@lambda13.local>
 
 	* version 3.6 released
