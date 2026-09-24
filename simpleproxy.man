@@ -45,9 +45,24 @@ appended to data received from the remote host before it is sent back to the
 client. This lets a peer that uses APC TCP terminator framing (e.g. an ABAP
 program connecting to \fIsimpleproxy\fP) talk to a server that does not use a
 message terminator. The terminator is handled per \fBread()\fP, not per
-message: only a terminator at the very end of a read chunk is stripped, and a
-terminator is appended after every chunk read from the remote host. Ignored when
-\fB\-u\fP or \fB\-A\fP is used. Config file key: \fIAPCTerminator\fP.
+message. Known limitations:
+.RS
+.IP \(bu 3
+remote to client: a terminator is appended after \fIevery\fP chunk read, so a
+reply that arrives in several TCP segments (or is larger than the 80 KB buffer)
+gets a terminator after each piece;
+.IP \(bu 3
+client to remote: only a terminator at the very end of a chunk is removed;
+with several messages in one chunk only the last terminator is removed, a
+terminator split across two chunks is not removed, and a chunk consisting only
+of the terminator is forwarded unchanged;
+.IP \(bu 3
+ignored when \fB\-u\fP or \fB\-A\fP is used;
+.IP \(bu 3
+the trace file (\fB\-t\fP) records data before the terminator is changed.
+.RE
+.IP
+Config file key: \fIAPCTerminator\fP.
 .TP 8
 .B \-i
 Use this flag when starting \fIsimpleproxy\fP from INETD.

@@ -99,6 +99,13 @@
 
 static char *SIMPLEPROXY_VERSION = "simpleproxy v3.6-apc by lord@crocodile.org,vlad@noir.crocodile.org,verylong@noir.crocodile.org,renzo@cs.unibo.it";
 static char *SIMPLEPROXY_USAGE   = "simpleproxy -L <[host:]port> -R <host:port> [-d] [-v] [-V] [-7] [-8] [-i] [-u] [-p PID file] [-P <POP3 accounts list file>] [-f cfgfile] [-t tracefile] [-D delay in sec.] [-S <HTTPS proxy host:port> [-a <HTTPS Auth user>:<HTTPS Auth password>] ] [-A  <HTTP Auth user>:<HTTP Auth password>]";
+static char *SIMPLEPROXY_APC_HELP =
+"  -8  SAP ABAP Push Channel mode (this fork): strip trailing CRLF from data\n"
+"      client->remote, append CRLF to data remote->client.\n"
+"      Limitation: works per TCP read() chunk, not per message. A remote reply\n"
+"      split over several reads gets CRLF after each piece; from the client\n"
+"      only a CRLF at the very end of a chunk is removed (not one in the\n"
+"      middle, nor one split across reads). Ignored with -u or -A.\n";
 static char *PROXY_HEADER_FMT = "\r\nProxy-Authorization: Basic %s";
 static char *PROXY_HEADER = "\r\nProxy-Authorization: Basic ";
 static char AUTHMSG[]=
@@ -114,7 +121,25 @@ static char AUTHMSG2[]= "\"\r\n"
 "Login and Password required\r\n"
 "<hr>\r\nSimpleProxy\r\n"
 "</BODY></HTML>\r\n";
-/* Message terminator used by -8 (SAP ABAP Push Channel framing) */
+/*
+ * -8: SAP ABAP Push Channel (APC) terminator mode (this fork only).
+ *
+ * APC TCP sockets need message framing (a terminator or a fixed length).
+ * With -8, APC_TERMINATOR is stripped from data going client -> remote
+ * (pass_in) and appended to data going remote -> client (pass_out).
+ *
+ * KNOWN LIMITATIONS - TCP does not preserve message boundaries, so this
+ * works on each read() chunk, not on each message:
+ *  - remote -> client: the terminator is appended after EVERY chunk read.
+ *    A reply that arrives in several TCP segments, or is larger than
+ *    MBUFSIZ, gets a terminator after each piece.
+ *  - client -> remote: only a terminator at the very END of a chunk is
+ *    stripped. Several messages in one chunk ("A\r\nB\r\n") lose only the
+ *    last terminator; a terminator split across two chunks ("A\r" + "\n")
+ *    is not stripped; a chunk that is exactly the terminator is forwarded.
+ *  - ignored with -u / -A (the HTTP parsing path in pass_in).
+ *  - the trace file (-t) records data before the terminator is changed.
+ */
 #define APC_TERMINATOR "\r\n"
 #define APC_TERMINATOR_LEN 2
 
@@ -366,6 +391,7 @@ int main(int ac, char **av)
     {
         (void)fprintf(stderr, "%s\n", SIMPLEPROXY_VERSION);
         (void)fprintf(stderr, "Usage:\n\t%s\n", SIMPLEPROXY_USAGE);
+        (void)fprintf(stderr, "\n%s", SIMPLEPROXY_APC_HELP);
         exit(1);
     }
 
@@ -732,7 +758,8 @@ static int pass_out( int in, int out)
         }
         if (isAPC)
         {
-            /* remote -> client: append terminator to each chunk read */
+            /* remote -> client: append terminator to each chunk read
+             * (per read(), not per message - see APC_TERMINATOR) */
             memcpy(buff + nread, APC_TERMINATOR, APC_TERMINATOR_LEN);
             nread += APC_TERMINATOR_LEN;
         }
@@ -837,7 +864,8 @@ static int pass_in( int in, int out , int htmlProbe, char *http_authhash)
             }
             if (isAPC)
             {
-                /* client -> remote: strip terminator from the end of the chunk read */
+                /* client -> remote: strip terminator only from the very end of
+                 * the chunk read (not mid-chunk or split - see APC_TERMINATOR) */
                 if (nread > APC_TERMINATOR_LEN &&
                     memcmp(buff + nread - APC_TERMINATOR_LEN, APC_TERMINATOR, APC_TERMINATOR_LEN) == 0)
                 {

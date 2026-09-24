@@ -1,9 +1,16 @@
 # simpleproxy (APC fork)
 
+> **Why this fork?** To make simpleproxy work with **SAP ABAP Push Channels
+> (APC)**. APC TCP sockets need every message to end with a terminator (or
+> have a fixed length). Upstream simpleproxy can't add or remove one. This
+> fork adds the `-8` option, which translates CRLF-terminated messages on the
+> client side to unterminated data on the remote side, and back.
+
 This is a fork of [vzaliva/simpleproxy](https://github.com/vzaliva/simpleproxy),
 a small TCP proxy (see [README.txt](README.txt) and `man simpleproxy` for the
-general documentation). The fork adds support for **SAP ABAP Push Channels
-(APC)** and is kept in sync with upstream (currently based on upstream **v3.6**).
+general documentation). It is based on upstream **v3.6** and pulls in upstream
+fixes. The APC changes are maintained only in this fork and are not submitted
+upstream.
 
 ## Why this fork exists
 
@@ -13,7 +20,8 @@ forwards the byte stream as is, so it can't sit between an APC endpoint and a
 TCP service that doesn't use such a terminator.
 
 The new `-8` option adds that framing, so simpleproxy can be used with ABAP
-Push Channels.
+Push Channels. Please read the [limitations](#limitations) before relying on
+it: the terminator is handled per TCP read, not per message.
 
 ## What `-8` does
 
@@ -42,6 +50,9 @@ APCTerminator   yes
 ```
 
 ### Limitations
+
+These are also described in `simpleproxy -h`, the man page, and the comment
+above `APC_TERMINATOR` in `simpleproxy.c`.
 
 TCP is a byte stream, so simpleproxy can't see message boundaries. `-8` works
 on each `read()` chunk:
