@@ -97,7 +97,7 @@
 #define SELECT_TIMOEOUT_SEC  5
 #define SELECT_TIMOEOUT_MSEC 0
 
-static char *SIMPLEPROXY_VERSION = "simpleproxy v3.5 by lord@crocodile.org,vlad@noir.crocodile.org,verylong@noir.crocodile.org,renzo@cs.unibo.it";
+static char *SIMPLEPROXY_VERSION = "simpleproxy v3.6 by lord@crocodile.org,vlad@noir.crocodile.org,verylong@noir.crocodile.org,renzo@cs.unibo.it";
 static char *SIMPLEPROXY_USAGE   = "simpleproxy -L <[host:]port> -R <host:port> [-d] [-v] [-V] [-7] [-i] [-u] [-p PID file] [-P <POP3 accounts list file>] [-f cfgfile] [-t tracefile] [-D delay in sec.] [-S <HTTPS proxy host:port> [-a <HTTPS Auth user>:<HTTPS Auth password>] ] [-A  <HTTP Auth user>:<HTTP Auth password>]";
 static char *PROXY_HEADER_FMT = "\r\nProxy-Authorization: Basic %s";
 static char *PROXY_HEADER = "\r\nProxy-Authorization: Basic ";
@@ -750,10 +750,11 @@ static int auth_check (char *buf, int len, char *http_authhash)
     char *match;
     if ((match=strstr(buf,PROXY_HEADER)) != NULL) {
         int authlen=strlen(PROXY_HEADER)+strlen(http_authhash);
-        if (((match - buf)-authlen) <= len) {
+        int auth_end = (match - buf)+authlen;
+        if (auth_end <=  len) {
             if (strncmp(match+strlen(PROXY_HEADER),http_authhash,strlen(http_authhash))==0 &&
                 (*(match + authlen) == '\r' || *(match + authlen) == '\n')) {
-                memmove(match,match+authlen,(match-buf)-authlen);
+                memmove(match,match+authlen,len-auth_end);
                 return(len-authlen);
             } else
                 return 0;
